@@ -43,7 +43,7 @@ function buildStatic() {
     'portal/index.html', 'portal/app.js', 'portal/styles.css', 'portal/automation-link.js',
     'portal/automation.html', 'portal/automation.js', 'portal/automation.css',
     'portal/bank.html', 'portal/bank.js', 'portal/bank.css',
-    'portal/payables.html', 'portal/payables.js', 'portal/payables.css', 'portal/payables-queue.js',
+    'portal/payables.html', 'portal/payables.js', 'portal/payables.css', 'portal/payables-queue.js', 'portal/payables-registration-ui.js',
     'shared/content.js', 'shared/accounting/money.js', 'shared/accounting/journal.js',
     'shared/access-control/authorization.js', 'shared/receivables/customer-receivables.js',
     'content/company.json', 'content/site.json', 'content/admin.json',

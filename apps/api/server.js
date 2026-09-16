@@ -7,6 +7,7 @@ const {createApiApp} = require('./app.js');
 const {createAutomationReviewRouter} = require('./automation-review-router.js');
 const {createBankRouter} = require('./bank-router.js');
 const {createPayablesRouter} = require('./payables-router.js');
+const {createPayablesRegistrationRouter} = require('./payables-registration-router.js');
 const {createPaymentReleaseRouter} = require('./payment-release-router.js');
 const {createPaymentConfirmationRouter} = require('./payment-confirmation-router.js');
 const Db = require('./database.js');
@@ -57,6 +58,7 @@ function createServer(options = {}) {
   const automationReview = createAutomationReviewRouter({db});
   const bank = createBankRouter({db});
   const payables = createPayablesRouter({db});
+  const payablesRegistration = createPayablesRegistrationRouter({db});
   const paymentRelease = createPaymentReleaseRouter({db});
   const paymentConfirmation = createPaymentConfirmationRouter({db});
   const server = http.createServer(async (req,res) => {
@@ -70,13 +72,14 @@ function createServer(options = {}) {
     }
     if (await automationReview.handle(req,res)) return;
     if (await bank.handle(req,res)) return;
+    if (await payablesRegistration.handle(req,res)) return;
     if (await paymentRelease.handle(req,res)) return;
     if (await paymentConfirmation.handle(req,res)) return;
     if (await payables.handle(req,res)) return;
     api.handle(req,res);
   });
   function close(callback) { server.close(() => { try { db.close(); } catch {} if (callback) callback(); }); }
-  return Object.freeze({server,db,api,automationReview,bank,payables,paymentRelease,paymentConfirmation,host,port,databasePath,close});
+  return Object.freeze({server,db,api,automationReview,bank,payables,payablesRegistration,paymentRelease,paymentConfirmation,host,port,databasePath,close});
 }
 if (require.main === module) {
   const runtime = createServer();
