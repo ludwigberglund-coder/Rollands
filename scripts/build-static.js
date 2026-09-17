@@ -37,13 +37,14 @@ function buildStatic() {
   fs.writeFileSync(path.join(target, '.nojekyll'), '');
   fs.writeFileSync(path.join(target, 'build-info.json'), `${JSON.stringify({source:'GitHub main',commit:process.env.GITHUB_SHA || 'local',generatedAt:new Date().toISOString(),demoOnly:true}, null, 2)}\n`);
   const required = [
-    'index.html', 'app.js', 'styles.css',
+    'index.html', 'app.js', 'styles.css', 'portal-entry.js',
     'admin/index.html', 'admin/app.js', 'admin/money-view.js', 'admin/money.css',
     'admin/access-view.js', 'admin/access.css', 'admin/journal-view.js', 'admin/journal.css',
     'portal/dashboard.html', 'portal/dashboard.js', 'portal/dashboard.css', 'portal/portal-nav.js',
-    'portal/index.html', 'portal/app.js', 'portal/styles.css', 'portal/automation-link.js',
     'portal/demo-scenario.js', 'portal/demo-workflows.js', 'portal/uat.html', 'portal/uat.js', 'portal/uat.css',
-    'portal/automation.html', 'portal/automation.js', 'portal/automation.css',
+    'portal/customers.html', 'portal/customers.js', 'portal/invoices.html', 'portal/invoices.js',
+    'portal/receivables.html', 'portal/receivables.js', 'portal/sales.css',
+    'portal/automation.html', 'portal/automation.js', 'portal/automation.css', 'portal/automation-execution.js',
     'portal/bank.html', 'portal/bank.js', 'portal/bank.css',
     'portal/payables.html', 'portal/payables.js', 'portal/payables.css', 'portal/payables-queue.js',
     'portal/payables-intake.js', 'portal/payables-intake.css',

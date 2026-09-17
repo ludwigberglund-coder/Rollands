@@ -1,79 +1,127 @@
-# Sammanhängande UAT-demo
+# Rollands Demo v1 – sammanhängande UAT-demo
 
-Den här filen beskriver hur den öppna GitHub Pages-demon hänger ihop. All demodata är fiktiv och sparas endast lokalt i användarens webbläsare.
+Den öppna GitHub Pages-demon är nu byggd för att granskas som **ett enda småföretagssystem** i stället för som fristående exempelsidor. All demodata är fiktiv och sparas endast lokalt i användarens webbläsare.
 
-## Syfte
+## Officiell demokedja
 
-Demon ska kunna granskas som ett enda småföretagssystem i stället för som fristående exempelsidor. Centrala poster använder därför samma interna id, fakturanummer, belopp och leverantör genom flera moduler.
+`publik Rollands-webb → Demoportal → Översikt → Kunder/Kundfakturor/Kundreskontra → Bank/Automation → Bokföring/Rapporter → Leverantörer/Lager/Lön/Dokument/Webbplats`
 
-`apps/portal/demo-scenario.js` är källan för den gemensamma demodatan. `apps/portal/demo-workflows.js` innehåller testbara demoflöden som ändrar flera delar av scenariot på ett kontrollerat sätt.
+`apps/portal/demo-scenario.js` är den gemensamma demodatakällan. `apps/portal/demo-workflows.js` innehåller de kontrollerade arbetsflöden som ändrar flera moduler samtidigt.
+
+## Försäljning
+
+Demon innehåller ett gemensamt kundregister. En ny fiktiv kund kan skapas och blir omedelbart valbar i Kundfakturor.
+
+En kundfaktura går genom följande kedja:
+
+1. välj eller skapa kund,
+2. ange fakturadatum, förfallodatum, rad, antal, pris och moms,
+3. spara fakturan som **Utkast**,
+4. förhandsvisa fakturan och skriv ut/spara PDF via webbläsaren,
+5. välj **Bokför & skicka demo**,
+6. fakturan blir **Bokförd**, får samma fakturanummer/OCR genom hela systemet och skapar en balanserad verifikation:
+   - Debet `1510 Kundfordringar`,
+   - Kredit `3010 Försäljning`,
+   - Kredit `2611 Utgående moms`,
+7. fakturan visas direkt i Kundreskontra.
 
 ## Kundinbetalning
 
-Huvudscenariot för kundinbetalning är:
+Huvudscenariot använder faktura `310002` till **Nordic Office Göteborg AB**, som har `3 925,00 kr` kvar att betala.
 
-1. Kundfaktura/avi `310002` till **Nordic Office Göteborg AB** har `3 925,00 kr` kvar att betala.
-2. Bankhändelsen med referens `310002` är också `3 925,00 kr`.
-3. Bankmatchningen föreslår att inbetalningen kopplas till faktura/avi `310002`.
-4. Automationskön visar åtgärden i klartext och visar föreslagen kontering:
-   - Debet `1930 Företagskonto / bank` 3 925,00 kr.
-   - Kredit `1510 Kundfordringar` 3 925,00 kr.
-5. Konton kan ändras före godkännande. Ett godkännande i Automationskön är fortfarande inte samma sak som bokföring.
+1. En redan registrerad demobankhändelse har referens `310002` och samma belopp.
+2. Bankmatchningen föreslår samma faktura.
+3. Automationskön visar Debet `1930 Företagskonto / bank` och Kredit `1510 Kundfordringar`.
+4. När det granskade förslaget godkänns i demon genomförs den kontrollerade demohändelsen:
+   - bankhändelsen markeras bokförd,
+   - kundfakturans restbelopp blir noll,
+   - fakturan blir **Betald**,
+   - en balanserad betalningsverifikation skapas.
 
-## Leverantörsfaktura och utbetalning
+**CAMT/BAM och verklig bankfilimport ingår uttryckligen inte i Demo v1.** Bankmodulen använder förregistrerade fiktiva bankhändelser tills bankfilsspåret tas upp igen.
 
-Huvudscenariot för leverantörsfakturor innehåller bland annat:
+## Leverantörsfakturor och betalning
 
-- `KE-2088`, **Kustens Emballage AB**, 589,00 kr: används för att granska och ändra konteringsförslag.
-- `BKS-771`, **Billdal Kyla & Service AB**, 4 375,00 kr: attesterad faktura som kan gå vidare till betalningsflödet.
-- `GF-8821`, **Göteborg Fruktlager AB**, 846,00 kr: redan betald faktura med dokument- och bokföringsspår.
+Gemensamma exempel:
 
-För `BKS-771` är den avsedda kedjan:
+- `KE-2088`, **Kustens Emballage AB**, 589,00 kr – granskning och konteringsförslag.
+- `BKS-771`, **Billdal Kyla & Service AB**, 4 375,00 kr – komplett attest- och betalningsflöde.
+- `GF-8821`, **Göteborg Fruktlager AB**, 846,00 kr – redan betald faktura med dokument- och bokföringsspår.
+
+För `BKS-771` är kedjan:
 
 1. fakturan är attesterad,
-2. betalningen förbereds,
-3. en separat användare kan frisläppa den,
-4. betalningen blir inte bokförd förrän bankbekräftelse registreras,
-5. bankbekräftelsen markerar fakturan betald och skapar en balanserad verifikation:
-   - Debet `2440 Leverantörsskulder`,
-   - Kredit `1930 Företagskonto / bank`.
+2. leverantörsskulden bokförs,
+3. betalningen förbereds,
+4. en separat användarroll frisläpper den,
+5. en fiktiv bankbekräftelse registreras,
+6. fakturan blir betald och en balanserad verifikation skapas med Debet `2440` och Kredit `1930`.
 
-Demon påstår aldrig att pengar verkligen skickats till en bank.
+Demon påstår aldrig att riktiga pengar har skickats.
 
-## Leverantörsregister
+## Leverantörer
 
-Leverantörsregistret använder samma leverantörer som leverantörsfakturorna. Ändringar av betalningsuppgifter går till en separat godkännandekö. Först efter godkännande ändras den aktiva demomasterdatan.
+Leverantörsregistret använder samma leverantörs-id som fakturorna. Ändringar av känsliga betalningsuppgifter går till separat godkännandekö innan aktiv masterdata ändras.
+
+## Lager
+
+Lagerartiklar, rörelser och inventeringsjusteringar ligger i samma demostate som dashboarden. Demon stöder:
+
+- inleverans,
+- försäljning,
+- svinn,
+- inventeringsdifferens,
+- separat godkännande/avslag av justering,
+- uppdaterat lagersaldo efter godkännande.
+
+## Lön
+
+Endast fiktiva och aggregerade lönebelopp används. En lönejournal kan importeras/valideras och därefter bokföras. Bokföringen skapar en verifikation i samma `accountingEntries` som Bokföring och Rapporter läser.
 
 ## Dokument
 
-Dokument använder samma interna affärs-id som övriga moduler. Exempelvis pekar originalet för `GF-8821` på samma leverantörsfakturapost som Leverantörsfakturor använder. Dokumentets SHA-256 i demon är exempeldata; inga riktiga företagsfiler publiceras på GitHub Pages.
+Dokument använder samma interna affärs-id som andra moduler. Originalprincip, kategori, metadata och SHA-256-exempel visas utan att riktiga företagsfiler publiceras på GitHub Pages.
 
-## Bokföring
+## Bokföring och rapporter
 
-Bokföringssidan läser samma `accountingEntries` som betalningsflödet skriver till. Motverifikationer, periodlås och demo-upplåsningar sparas också i den gemensamma demostaten.
+Bokföringssidan läser samma verifikationer som kundfakturering, kundbetalningar, leverantörsbetalningar och lön skapar. Originalverifikationer redigeras inte; rättelser skapar motverifikationer. Periodlås och upplåsningskö ingår.
 
-Originalverifikationer redigeras inte. En rättelse skapar en ny post med omvänd debet/kredit.
+Rapporterna räknas från samma gemensamma demodata:
 
-## Återställning och UAT
+- balanslista,
+- huvudbok,
+- resultatrapport,
+- momsavstämningsunderlag.
 
-`/portal/uat.html?demo=1` är startpunkten för manuell UAT. Där kan varje steg markeras som:
+Momsavstämningen är ett kontrollunderlag och ska inte beskrivas som färdig momsdeklaration.
 
-- Ej testad,
-- Godkänd,
-- Fel / behöver rättas,
-- Önskad ändring.
+## Webbplats och CMS
 
-Anteckningar och UAT-status lagras lokalt i webbläsaren. **Återställ demoscenario** återställer den gemensamma fiktiva datan och UAT-markeringarna.
+Den publika Rollands-webben har en tydlig väg till Demoportalen. Webbplats & innehåll i portalen används för utkast/förhandsvisning av redigerbart webbplatsinnehåll. Juridiska kärnuppgifter hålls separerade från marknadsinnehåll.
 
-## CI-kontroller
+## UAT
+
+`/portal/uat.html?demo=1` är den officiella testguiden och går igenom 16 steg från publik webb till helhetsbedömning. Varje steg kan markeras som Ej testad, Godkänd, Fel/behöver rättas eller Önskad ändring.
+
+**Återställ demoscenario** återställer all gemensam fiktiv affärsdata och UAT-status.
+
+## Automatiska kontroller
 
 `test/demo-scenario.test.js` kontrollerar bland annat att:
 
-- kundfaktura och bankbetalning har samma matchningsbelopp,
-- automationsförslag pekar på rätt affärsobjekt,
-- dokumentlänkar pekar på befintliga leverantörsfakturor,
-- demoverifikationer balanserar,
-- leverantörsbetalning inte kan bankbekräftas före frisläppning,
-- ett fullföljt leverantörsbetalningsflöde uppdaterar faktura, betalning och bokföring konsekvent.
+- kundregister och kundfakturering använder samma affärsobjekt,
+- en bokförd kundfaktura skapar balanserad 1510/3010/2611-verifikation,
+- bankmatchningen använder exakt samma restbelopp och faktura,
+- en genomförd kundinbetalning nollar reskontran och skapar balanserad 1930/1510-verifikation,
+- automationsförslag pekar på befintliga leverantörsfakturor,
+- dokumentlänkar pekar på befintliga affärsobjekt,
+- leverantörsbetalning kräver rätt ordningsföljd,
+- ett fullföljt leverantörsbetalningsflöde nollar 2440,
+- lagerjusteringar pekar på befintliga artiklar,
+- lönejournaler och samtliga initiala demoverifikationer balanserar.
 
-Dessa tester gäller demots sammanhang och ersätter inte produktionsintegration, bankavtal eller verklig redovisningskontroll.
+Det statiska bygget kräver dessutom att alla huvudmoduler för Demo v1 finns med innan GitHub Pages kan publiceras.
+
+## Avgränsning
+
+Demo v1 är en **gransknings- och demonstrationsmiljö**, inte en produktionsmiljö. Den ersätter inte verklig bankintegration, personlig produktionsinloggning/MFA, PostgreSQL, skyddat dokumentarkiv, redovisningsgranskning eller myndighetsflöden.
