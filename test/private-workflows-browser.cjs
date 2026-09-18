@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require('playwright');
+const {PDFDocument}=require('pdf-lib');
 const {fixture}=require('./private-workflows-fixture.cjs');
 const Auth=require('../apps/api/auth.js');
 const Cms=require('../apps/api/website-cms.js');
@@ -98,17 +99,22 @@ const Cms=require('../apps/api/website-cms.js');
     await page.screenshot({path:path.join(out,'private-supplier-pdf-view.png'),fullPage:false});checks.push('Original supplier PDF served byte-exact through private iframe with CSP active');
     await page.goto(f.base+'/portal/invoices.html');
     await page.locator(`[data-preview="${f.issued.invoice.id}"]`).click();
+    const archivedResponse=page.waitForResponse(r=>r.url().includes(`/api/v1/customer-invoices/${f.issued.invoice.id}/pdf`)&&r.status()===200);
     const [pdfTab]=await Promise.all([
       page.waitForEvent('popup'),
       page.getByRole('button',{name:'\u00d6ppna faktura PDF',exact:true}).click()
     ]);
-    await pdfTab.waitForURL(url=>url.protocol==='blob:',{waitUntil:'commit'});
-    const blobUrl=pdfTab.url();
-    assert.ok(blobUrl.startsWith('blob:'+f.base+'/'));
+    const pdfHttpResponse=await archivedResponse;
+    await pdfTab.waitForURL(url=>url.pathname.endsWith(`/api/v1/customer-invoices/${f.issued.invoice.id}/pdf`),{waitUntil:'commit'});
+    const bytes=await pdfHttpResponse.body();
+    assert.equal(Buffer.from(bytes.subarray(0,5)).toString('ascii'),'%PDF-');
+    assert.ok((await PDFDocument.load(bytes)).getPageCount()>=1);
+    assert.equal(pdfHttpResponse.headers()['x-document-sha256'],f.issued.pdfArchive.sha256);
+    fs.writeFileSync(path.join(out,'private-customer-output.pdf'),Buffer.from(bytes));
     await pdfTab.waitForTimeout(800);
     await pdfTab.screenshot({path:path.join(out,'private-customer-pdf-view.png')});
     await pdfTab.close();
-    assert.deepEqual(await page.evaluate(()=>window.__cspFailures),[]);checks.push('Customer PDF button uses real API invoice and local pinned PDF library');
+    assert.deepEqual(await page.evaluate(()=>window.__cspFailures),[]);checks.push('Customer PDF button serves the exact immutable API archive');
     assert.deepEqual(errors,[]);
     fs.writeFileSync(path.join(out,'private-workflow-results.json'),JSON.stringify({checks,passed:checks.length,pageErrors:errors},null,2));
     console.log(`Private API browser checks passed: ${checks.length}.`);

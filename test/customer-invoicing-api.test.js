@@ -3,6 +3,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const http=require('node:http');
+const crypto=require('node:crypto');
+const {PDFDocument}=require('pdf-lib');
 const Auth=require('../apps/api/auth.js');
 const Db=require('../apps/api/database.js');
 const Accounting=require('../apps/api/accounting-store.js');
@@ -82,6 +84,14 @@ test('utställning kräver CSRF och skapar atomiskt faktura, underlag, verifikat
   assert.equal(data.document.seller.name,'Testbutiken AB');
   assert.equal(data.document.totalOre,125000);
   assert.match(data.documentSha256,/^[a-f0-9]{64}$/);
+  assert.match(data.pdfArchive.sha256,/^[a-f0-9]{64}$/);
+  assert.ok(data.pdfArchive.sizeBytes>500);
+  const pdfResponse=await fetch(base+`/api/v1/customer-invoices/${data.invoice.id}/pdf`,{headers:{Cookie:signed.cookie}});
+  const pdfBytes=Buffer.from(await pdfResponse.arrayBuffer());
+  assert.equal(pdfResponse.status,200);
+  assert.equal(pdfResponse.headers.get('x-document-sha256'),data.pdfArchive.sha256);
+  assert.equal(crypto.createHash('sha256').update(pdfBytes).digest('hex'),data.pdfArchive.sha256);
+  assert.ok((await PDFDocument.load(pdfBytes)).getPageCount()>=1);
   const entry=Accounting.entryBySource(db,co1.id,'customer-invoice',data.invoice.id);
   assert.equal(entry.number,'F1');
   assert.equal(entry.lines.find(row=>row.account==='1510').debitOre,125000);
@@ -100,6 +110,34 @@ test('samma idempotensnyckel kan skickas igen utan dubbel faktura eller dubbel v
   assert.equal(two.invoice.id,one.invoice.id);
   assert.equal(Invoicing.listCustomerInvoices(db,co1.id).filter(row=>row.invoiceNumber==='310101').length,1);
   assert.equal(Accounting.listEntries(db,co1.id).filter(row=>row.sourceId===one.invoice.id).length,1);
+}));
+
+test('samma idempotensnyckel med ändrat innehåll stoppas i stället för att återanvända gammal faktura',async()=>withApi(async({base,password,db,co1})=>{
+  const signed=await login(base,password),headers={Cookie:signed.cookie,'Content-Type':'application/json','X-CSRF-Token':signed.body.csrfToken},payload=invoicePayload('invoice-request-conflict-0001');
+  const first=await fetch(base+'/api/v1/customer-invoices',{method:'POST',headers,body:JSON.stringify(payload)});
+  assert.equal(first.status,201);
+  const changed={...payload,notes:'Ändrat innehåll efter första anropet'};
+  const retry=await fetch(base+'/api/v1/customer-invoices',{method:'POST',headers,body:JSON.stringify(changed)}),body=await retry.json();
+  assert.equal(retry.status,409);
+  assert.equal(body.code,'INVOICE_IDEMPOTENCY_CONFLICT');
+  assert.equal(Invoicing.listCustomerInvoices(db,co1.id).filter(row=>row.invoiceNumber==='310101').length,1);
+}));
+
+test('PDF-fel avbryter fakturautställningen innan faktura eller verifikation sparas',async()=>withApi(async({db,co1,user})=>{
+  const beforeInvoices=Invoicing.listCustomerInvoices(db,co1.id).length,beforeEntries=Accounting.listEntries(db,co1.id).length;
+  await assert.rejects(()=>Invoicing.issueInvoice(db,{companyId:co1.id,userId:user.id,payload:invoicePayload('invoice-request-pdf-fail-0001'),profile:PROFILE,pdfCreator:async()=>{throw new Error('render fail')}}),error=>error.code==='INVOICE_PDF_ARCHIVE_FAILED');
+  assert.equal(Invoicing.listCustomerInvoices(db,co1.id).length,beforeInvoices);
+  assert.equal(Accounting.listEntries(db,co1.id).length,beforeEntries);
+}));
+
+test('ändrad arkiverad PDF blockeras vid utlämning',async()=>withApi(async({base,password,db})=>{
+  const signed=await login(base,password),headers={Cookie:signed.cookie,'Content-Type':'application/json','X-CSRF-Token':signed.body.csrfToken},payload=invoicePayload('invoice-request-pdf-integrity-0001');
+  const created=await fetch(base+'/api/v1/customer-invoices',{method:'POST',headers,body:JSON.stringify(payload)}),data=await created.json();
+  db.exec('DROP TRIGGER history_customer_invoice_pdf_archives_update');
+  db.prepare('UPDATE customer_invoice_pdf_archives SET pdf_bytes=? WHERE invoice_id=?').run(Buffer.from('%PDF-corrupt'),data.invoice.id);
+  const response=await fetch(base+`/api/v1/customer-invoices/${data.invoice.id}/pdf`,{headers:{Cookie:signed.cookie}}),body=await response.json();
+  assert.equal(response.status,409);
+  assert.equal(body.code,'INVOICE_PDF_INTEGRITY_ERROR');
 }));
 
 test('låst period stoppar hela fakturatransaktionen utan halvskrivna poster',async()=>withApi(async({base,password,db,co1})=>{

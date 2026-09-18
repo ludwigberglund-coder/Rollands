@@ -43,7 +43,7 @@ async function fixture(){
   const payable=supplierInvoice(a,admin),otherPayable=supplierInvoice(b,other);
   const customer=Db.createCustomer(db,{companyId:a.id,customerNumber:'K-1001',name:'Fiktiv testkund AB',address:{full:'Kundgatan 2, Teststad'},orgNumber:'559900-1004'});
   Settings.setInvoiceSettings(db,{companyId:a.id,bankgiro:'123-4567',taxStatus:'Testunderlag',updatedBy:admin.id});
-  const issued=Db.transaction(db,()=>Invoicing.issueInvoice(db,{companyId:a.id,userId:admin.id,payload:{...input,requestId:'private-pdf-browser-test-001'},profile:{legalName:a.legalName,orgNumber:a.orgNumber,vatNumber:'SE559900100101',address:{full:'Testgatan 1, Teststad'},contact:{email:'info@example.invalid'},invoice:{}}}));
+  const issued=await Invoicing.issueInvoice(db,{companyId:a.id,userId:admin.id,payload:{...input,requestId:'private-pdf-browser-test-001'},profile:{legalName:a.legalName,orgNumber:a.orgNumber,vatNumber:'SE559900100101',address:{full:'Testgatan 1, Teststad'},contact:{email:'info@example.invalid'},invoice:{}}});
   await new Promise(resolve=>runtime.server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${runtime.server.address().port}`;
   const loginCache=new Map();

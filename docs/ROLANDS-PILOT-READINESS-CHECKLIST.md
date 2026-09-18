@@ -11,7 +11,7 @@ Senast granskad: 2026-09-18. Företag: Rolands Frukt o Grönt Aktiebolag, 556406
 | GitHub som källa, spårbara ändringar | ✅ Klar | Baseline c8bb496; separata grenar/PR:er med kontroller före sammanslagning. |
 | Atomisk lagring av en verifikation | ✅ Klar | PR 62; fel vid andra raden återställer huvud, rader och nummerserie. PR 66 testar även fel i förseglingen. |
 | Identiska/ändrade återförsök på journalnivå | ✅ Klar | PR 62; identiskt återanvänder, ändrat innehåll nekas. |
-| Dubbelklick/idempotens i alla affärsflöden | 🟡 Delvis klar | PR 66 testar dubbla rättelseanrop. Journalens skydd räcker inte för kundfakturans tidiga request-ID-retur eller alla andra mutationer. |
+| Dubbelklick/idempotens i alla affärsflöden | 🟡 Delvis klar | Journal och rättelser har återförsöksskydd. Kundfakturering binder nu request-ID till innehållsfingeravtryck och stoppar ändrade återförsök. Övriga kritiska mutationer behöver samma negativa testmatris. |
 | Deklarerade företagsrelationer i SQLite | ✅ Klar | PR 63; kontroll vid start och spärrar för INSERT/UPDATE. Befintlig ogiltig historik stoppar start utan att tas bort. |
 | Fullständig företagsisolering och IDOR | 🟡 Delvis klar | Vanlig företagsfiltrering, 14 routefamiljers anonyma anrop och flera objektprov; hela roll-/metodmatrisen och polymorfa länkar återstår. |
 | Inloggning, sessionscookie, MFA och CSRF | 🟡 Delvis klar | PR 73: 60 min idle-timeout, 8 h absolut sluttid och engångsförbrukning av TOTP-steg är testade; aktuella roller läses server-side vid varje session. Kontorecovery, processöverskridande brute-force-skydd, nyckelrotation och driftprov återstår. |
@@ -27,7 +27,7 @@ Senast granskad: 2026-09-18. Företag: Rolands Frukt o Grönt Aktiebolag, 556406
 | Kundfordringar, leverantörsskulder, ingående balanser | ❌ Inte klar | Normalflöden finns men full avstämning, import och källanknutna rättelser saknar pilotbevis. |
 | Lokalt tekniskt backup-/restore-verktyg | 🟡 Delvis klar | PR 64 har utökad verifiering och verkliga CLI-prov. PR 66 verifierar även befintliga journalförseglingar. Det är inte ett helt återställningsprov av driftmiljön. |
 | Krypterad extern backup, retention och larm | ❌ Inte klar | Inget verifierat leverantörs-/konfigurationsbevis. |
-| Arkivering av original och långsiktig läsbarhet | ❌ Inte klar | Arkivplan, exakt utfärdat underlag, export/återläsning och avtal återstår. |
+| Arkivering av original och långsiktig läsbarhet | 🟡 Delvis klar | Nya privata kundfakturor arkiverar exakt PDF atomiskt med SHA-256 och restore-kontroll. Äldre fakturor utan bevisat original, extern retention, export/återläsning och långtidsläsbar drift återstår. Se CUSTOMER-INVOICE-PDF-ARCHIVE.md. |
 | Health/readiness, driftlogg och fungerande larm | ❌ Inte klar | Teknisk grund finns men disk-/DB-/timeout- och larmscenarier saknas. |
 | Secrets-hantering och historikskanning | 🟡 Delvis klar | Platshållare i exempelkonfiguration; snapshot-skanning utan tydliga tokenfynd. Full Git-historik och faktisk drift måste kontrolleras. |
 | Miljöspärr och separation demo/pilot/produktion | 🟡 Delvis klar | PR 67: bindande startkontroll, privata lagringssökvägar, servernekat demo-query och inga demo-/legacyhjälpfiler. Granskning av befintliga data och verklig drift återstår. |

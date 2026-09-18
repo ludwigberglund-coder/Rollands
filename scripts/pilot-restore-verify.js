@@ -22,6 +22,15 @@ function verifyDatabase(filename){
     if(!tenants.ok)throw new Error('RESTORE_TENANT_FAILED: cross-company references found.');
     const accountingTables=['accounting_entries','accounting_entry_lines','accounting_sequences'];
     if(accountingTables.some(table=>present.has(table))&&!accountingTables.every(table=>present.has(table)))throw new Error('RESTORE_ACCOUNTING_SCHEMA_INCOMPLETE');
+    let archivedCustomerPdfs=0;
+    if(present.has('customer_invoice_pdf_archives')){
+      for(const row of db.prepare('SELECT invoice_id AS invoiceId,pdf_bytes AS pdfBytes,pdf_sha256 AS pdfSha256,size_bytes AS sizeBytes FROM customer_invoice_pdf_archives').iterate()){
+        const bytes=Buffer.from(row.pdfBytes);
+        const digest=crypto.createHash('sha256').update(bytes).digest('hex');
+        if(bytes.length!==row.sizeBytes||bytes.length<5||bytes.subarray(0,5).toString('ascii')!=='%PDF-'||digest!==row.pdfSha256)throw new Error(`RESTORE_CUSTOMER_PDF_FAILED: invalid archived PDF for ${row.invoiceId}.`);
+        archivedCustomerPdfs++;
+      }
+    }
     let journalEntries=0;
     if(present.has('accounting_entries')){
       const lines=db.prepare('SELECT account,line_text AS text,debit_ore AS debitOre,credit_ore AS creditOre FROM accounting_entry_lines WHERE entry_id=? ORDER BY line_number');
@@ -41,7 +50,7 @@ function verifyDatabase(filename){
       }
       if(db.prepare('SELECT 1 FROM accounting_sequences s WHERE s.last_number<>0 AND NOT EXISTS (SELECT 1 FROM accounting_entries e WHERE e.company_id=s.company_id AND e.series=s.series AND e.fiscal_year=s.fiscal_year) LIMIT 1').get())throw new Error('RESTORE_SEQUENCE_FAILED: sequence without journal entries.');
     }
-    return {sqliteIntegrity:true,foreignKeys:true,tenantRelations:tenants.checkedRelations,journalEntries};
+    return {sqliteIntegrity:true,foreignKeys:true,tenantRelations:tenants.checkedRelations,journalEntries,archivedCustomerPdfs};
   }finally{db.close()}
 }
 function main(){

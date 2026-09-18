@@ -286,7 +286,7 @@ function createApiApp(options) {
       if(req.method==='POST' && url.pathname==='/api/v1/customer-invoices') {
         requirePermission(session,'customer-invoice.issue');
         const payload=await readJson(req,res); if(!payload) return;
-        const result=Db.transaction(db,()=>CustomerInvoicing.issueInvoice(db,{companyId:session.companyId,userId:session.userId,payload,profile:companyProfile}));
+        const result=await CustomerInvoicing.issueInvoice(db,{companyId:session.companyId,userId:session.userId,payload,profile:companyProfile});
         return send(res,result.duplicate?200:201,result);
       }
 
@@ -296,6 +296,18 @@ function createApiApp(options) {
         const result=CustomerInvoicing.invoiceBundle(db,session.companyId,customerInvoiceMatch[1]);
         if(!result) throw apiError('Fakturan hittades inte i det inloggade företaget.','INVOICE_NOT_FOUND',404);
         return send(res,200,result);
+      }
+
+      const customerInvoicePdfMatch=url.pathname.match(/^\/api\/v1\/customer-invoices\/([^/]+)\/pdf$/);
+      if(customerInvoicePdfMatch && req.method==='GET') {
+        requirePermission(session,'customer-invoice.view');
+        const invoice=Db.invoiceById(db,session.companyId,customerInvoicePdfMatch[1]);
+        if(!invoice) throw apiError('Fakturan hittades inte i det inloggade företaget.','INVOICE_NOT_FOUND',404);
+        const archived=CustomerInvoicing.archivedPdfForInvoice(db,session.companyId,invoice.id);
+        if(!archived) throw apiError('Exakt arkiverad PDF saknas för den här fakturan.','INVOICE_PDF_ARCHIVE_MISSING',409);
+        res.writeHead(200,{...securityHeaders(),'Content-Type':'application/pdf','Content-Disposition':`inline; filename="faktura-${invoice.invoiceNumber}.pdf"`,'Content-Length':archived.bytes.length,'X-Document-SHA256':archived.pdfSha256,'Cache-Control':'private, no-store'});
+        res.end(archived.bytes);
+        return;
       }
 
       if(req.method==='GET' && url.pathname==='/api/v1/receivables') {

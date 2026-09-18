@@ -7,6 +7,9 @@ const os=require('node:os');
 const path=require('node:path');
 const Db=require('../apps/api/database.js');
 const Accounting=require('../apps/api/accounting-store.js');
+const CustomerInvoicing=require('../apps/api/customer-invoicing.js');
+const {verifyDatabase}=require('../scripts/pilot-restore-verify.js');
+const crypto=require('node:crypto');
 
 function sqlLiteral(value){return `'${String(value).replaceAll("'","''")}'`}
 
@@ -51,4 +54,22 @@ test('SQLite-backup kan integritetskontrolleras och återställas med ekonomi oc
     try{restored?.close()}catch{}
     fs.rmSync(dir,{recursive:true,force:true});
   }
+});
+
+
+test('restore-verifiering stoppar manipulerat exakt kundfaktura-PDF-arkiv',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rollands-pdf-archive-restore-'));
+  const filename=path.join(dir,'archive.sqlite');let db;
+  try{
+    db=Db.openDatabase(filename);CustomerInvoicing.initializeCustomerInvoicing(db);
+    const company=Db.createCompany(db,{legalName:'Arkivtest AB',displayName:'Arkivtest',orgNumber:'559999-2001'});
+    const user=Db.createUser(db,{username:'archive-test',displayName:'Archive Test',passwordHash:'test-only-hash'});Db.addMembership(db,{companyId:company.id,userId:user.id,roles:['accountant']});
+    const customer=Db.createCustomer(db,{companyId:company.id,customerNumber:'K-1',name:'Arkivkund AB'});
+    const invoice=Db.createInvoice(db,{companyId:company.id,customerId:customer.id,invoiceNumber:'310001',invoiceDate:'2026-09-18',postingDate:'2026-09-18',dueDate:'2026-10-18',totalOre:10000,remainingOre:10000,vatOre:2000,status:'Bokförd'});
+    const bytes=Buffer.from('%PDF-1.4\narchive-test\n%%EOF');const sha=crypto.createHash('sha256').update(bytes).digest('hex');
+    db.prepare('INSERT INTO customer_invoice_pdf_archives(invoice_id,company_id,pdf_bytes,pdf_sha256,size_bytes,generator_version,created_at) VALUES(?,?,?,?,?,?,?)').run(invoice.id,company.id,bytes,sha,bytes.length,'test','2026-09-18T12:00:00.000Z');
+    db.close();db=null;assert.equal(verifyDatabase(filename).archivedCustomerPdfs,1);
+    db=Db.openDatabase(filename);db.exec('DROP TRIGGER history_customer_invoice_pdf_archives_update');db.prepare('UPDATE customer_invoice_pdf_archives SET pdf_bytes=? WHERE invoice_id=?').run(Buffer.from('%PDF-corrupt'),invoice.id);db.close();db=null;
+    assert.throws(()=>verifyDatabase(filename),/RESTORE_CUSTOMER_PDF_FAILED/);
+  }finally{try{db?.close()}catch{}fs.rmSync(dir,{recursive:true,force:true});}
 });
