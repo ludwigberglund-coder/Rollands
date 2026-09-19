@@ -74,8 +74,10 @@ test('private navigation contains only usable portal links and uses the real rec
   assert.equal(items.find(row=>row[0]==='receivables')[2],'portal/index.html');
   assert.ok(!items.some(row=>/^(admin|legacy)\//.test(row[2]) || row[0]==='uat'));
   for(const [id,label,route] of items)assert.equal((await fetch(base+'/'+route)).status,200,label);
-  const alias=await fetch(base+'/portal/receivables.html',{redirect:'manual'});
-  assert.equal(alias.status,302);assert.equal(alias.headers.get('location'),'/portal/index.html');
+  for(const route of ['/portal/','/portal/receivables.html']){
+    const alias=await fetch(base+route,{redirect:'manual'});
+    assert.equal(alias.status,302);assert.equal(alias.headers.get('location'),'/portal/index.html');
+  }
   assert.ok(Nav.visibleGroups(access,[],{}).length===0);
   assert.ok(Nav.visibleGroups(access,[],{demo:true}).flatMap(group=>group.items).some(row=>row[0]==='uat'));
 }));
