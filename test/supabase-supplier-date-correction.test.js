@@ -64,4 +64,11 @@ test('Supabase payables UI uses the correction RPC instead of the private API ro
   assert.match(fn,/p_request_id:requestId/);
   assert.match(fn,/Datumen ändras först när bunten godkänns/);
   assert.match(fn,/\/correct-dates/); // legacy private runtime remains supported outside GitHub Pages.
+
+  const handlerStart=js.indexOf("else if(b.dataset.action==='post-invoice'&&isSupabase)");
+  const genericBlock=js.indexOf("else if(isSupabase)throw new Error('Åtgärden är inte migrerad till Supabase ännu.')",handlerStart);
+  assert.ok(handlerStart>=0&&genericBlock>handlerStart);
+  const supabaseActions=js.slice(handlerStart,genericBlock);
+  assert.match(supabaseActions,/b\.dataset\.action==='correct-dates'&&isSupabase/);
+  assert.match(supabaseActions,/await correctInvoiceDates\(\)/);
 });
