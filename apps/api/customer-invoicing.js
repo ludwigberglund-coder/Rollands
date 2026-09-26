@@ -355,7 +355,10 @@ function preparedCustomerInvoiceDocument(db,{companyId,payload,profile,invoiceNu
   const customer=customerByNumber(db,companyId,payload?.customerNumber);
   if(!customer)throw invoiceError('Kunden finns inte i det inloggade företagets kundregister.','CUSTOMER_NOT_FOUND',404);
   let document;
-  try{document=Invoice.prepare({customerNumber:customer.customerNumber,buyer:{name:customer.name,address:customer.address?.full||'',orgNumber:customer.orgNumber||'',email:customer.email||''},seller:readiness.seller,invoiceDate:payload?.invoiceDate,postingDate:payload?.postingDate,dueDate:payload?.dueDate,paymentTermsDays:payload?.paymentTermsDays,currency:'SEK',ourReference:payload?.ourReference,yourReference:payload?.yourReference,notes:payload?.notes,lines:payload?.lines},{invoiceNumber,accounts:[],requireVatTreatment:true})}catch(error){throw invoiceError(error.message,'INVALID_CUSTOMER_INVOICE',422)}
+  try{
+    document=Invoice.prepare({customerNumber:customer.customerNumber,buyer:{name:customer.name,address:customer.address?.full||'',orgNumber:customer.orgNumber||'',email:customer.email||''},seller:readiness.seller,invoiceDate:payload?.invoiceDate,postingDate:payload?.postingDate,dueDate:payload?.dueDate,paymentTermsDays:payload?.paymentTermsDays,currency:'SEK',ourReference:payload?.ourReference,yourReference:payload?.yourReference,notes:payload?.notes,lines:payload?.lines},{invoiceNumber,accounts:[],requireVatTreatment:false});
+    if(document.lines.some(line=>![25,12,6].includes(Number(line.vatRate))))throw new Error('Momssatsen måste vara 25 %, 12 % eller 6 %.');
+  }catch(error){throw invoiceError(error.message,'INVALID_CUSTOMER_INVOICE',422)}
   document.demo=false;
   const periodRow=db.prepare('SELECT status FROM accounting_periods WHERE company_id=? AND period=?').get(companyId,String(document.postingDate||'').slice(0,7));
   if(periodRow?.status==='locked')throw invoiceError(`Bokföringsperioden ${String(document.postingDate).slice(0,7)} är låst.`,'PERIOD_LOCKED',409);

@@ -128,13 +128,14 @@ function loginView(error=''){
 
 function sidebar(){return `<aside class="sidebar"><div class="logo"><strong>${escapeHtml(session?.company?.name||'Företaget')}</strong><small>LT STUDIO</small></div><div class="company-pill">${escapeHtml(session?.company?.name||'Företaget')}<br>${mode==='demo'?'Demoföretag':'Skyddad företagsmiljö'}</div><div class="side-group"><span>Arbetsyta</span><button class="side-link disabled">Översikt</button></div><div class="side-group"><span>Försäljning</span><button class="side-link active">Kundreskontra</button><button class="side-link disabled">Kundfakturor</button><button class="side-link disabled">Kunder</button></div><div class="side-group"><span>Ekonomi</span><button class="side-link disabled">Bank & avstämning</button><button class="side-link disabled">Bokföring</button><button class="side-link disabled">Rapporter</button></div><div class="sidebar-footer">${mode==='demo'?'Öppen GitHub Pages-demo. Inga riktiga företagsuppgifter får användas här.':'Servervaliderad session · default deny'}</div></aside>`}
 
+function pendingBatchInvoice(invoice){return String(invoice?.status||'')==='Väntar på bunt'}
 function metricValues(){
-  const list=visibleReceivableInvoices().map(withDemoState),open=list.filter(i=>i.remainingOre>0),overdue=open.filter(i=>i.dueDate<today());
+  const visible=visibleReceivableInvoices().map(withDemoState),list=visible.filter(invoice=>!pendingBatchInvoice(invoice)),open=list.filter(i=>i.remainingOre>0),overdue=open.filter(i=>i.dueDate<today());
   return{
     total:ore(list.reduce((n,i)=>n+Number(i.remainingOre||0),0)),
     overdue:ore(overdue.reduce((n,i)=>n+Number(i.remainingOre||0),0)),
     open:String(open.length),
-    comments:String(list.reduce((sum,i)=>sum+Number(i.commentCount||0),0))
+    comments:String(visible.reduce((sum,i)=>sum+Number(i.commentCount||0),0))
   };
 }
 function metrics(){
@@ -144,7 +145,7 @@ function metrics(){
 
 function columnPicker(){return `<details class="column-picker"><summary>☷ Välj kolumner</summary><div class="column-menu">${R.RECEIVABLE_COLUMNS.map(column=>`<label><input type="checkbox" data-column="${escapeHtml(column.id)}" ${visibleColumns.has(column.id)?'checked':''}>${escapeHtml(column.label)}</label>`).join('')}<button class="button ghost small" data-action="reset-columns" type="button">Återställ alla</button></div></details>`}
 
-function cell(column,row){let value=row[column.id];if(column.money)return `<td class="money">${ore(value)}</td>`;if(column.id==='dueDate')return `<td class="${row.remainingOre>0&&value<today()?'overdue':''}">${escapeHtml(shortDate(value))}</td>`;return `<td>${escapeHtml(value==null||value===''?'—':value)}</td>`}
+function cell(column,row){let value=row[column.id];if(column.money)return `<td class="money">${ore(value)}</td>`;if(column.id==='dueDate')return `<td class="${!row.receivablesPending&&row.remainingOre>0&&value<today()?'overdue':''}">${escapeHtml(shortDate(value))}</td>`;return `<td>${escapeHtml(value==null||value===''?'—':value)}</td>`}
 function mappedTransaction(transaction){const bookingType=transaction.transactionType==='payment'?'Inbetalning':transaction.transactionType==='refund'?'Återbetalning':transaction.transactionType;return {...transaction,type:transaction.transactionType==='payment'?'payment':transaction.transactionType,method:transaction.paymentMethod,date:transaction.paymentDate,postingDate:transaction.postingDate,batch:transaction.batchNumber,transactionNumber:transaction.journalNumber,bookingType,amountOre:transaction.amountOre}}
 
 function customerOverview(){
@@ -209,9 +210,10 @@ function table(){
   const head=columns.map(c=>`<th>${escapeHtml(c.label)}</th>`).join('');
   const bodies=invoices.map(rawInvoice=>{
     const invoice=withDemoState(rawInvoice),visible=ids.has(String(invoice.customerId)),hidden=visible?'':'hidden';
-    const customer=customerSummary(invoice.customerId),base=R.receivableRow(invoice),comments=invoice.commentCount||0,invoiceRest=Number(invoice.remainingOre||0);
+    const customer=customerSummary(invoice.customerId),base={...R.receivableRow(invoice),receivablesPending:pendingBatchInvoice(invoice)},comments=invoice.commentCount||0,invoiceRest=Number(invoice.remainingOre||0);
     const refundBadge=invoice.credit?.refundStatus==='pending'?`<span class="comment-badge">Återbetalning väntar · ${ore(invoice.credit.refundOutstandingOre)}</span>`:invoice.credit?.refundStatus==='refunded'?'<span class="comment-badge">Återbetalad</span>':'';
-    const invoiceRow=`<tr class="invoice-row" data-invoice-id="${escapeHtml(invoice.id)}" data-customer-id="${escapeHtml(invoice.customerId||'')}" ${hidden}><td class="customer-cell"><div class="customer-identity invoice-customer-identity"><span><b>${escapeHtml(customer.customerNumber||'—')}</b><strong>${escapeHtml(customer.customerName||'Okänd kund')}</strong>${customer.orgNumber?`<small>Org.nr ${escapeHtml(customer.orgNumber)}</small>`:''}</span><span class="invoice-rest-badge"><small>Restbelopp</small><b>${ore(invoiceRest)}</b></span></div>${comments?`<span class="comment-badge">💬 ${comments}</span>`:''}${refundBadge}</td>${columns.map(c=>cell(c,base)).join('')}</tr>`;
+    const pendingBadge=pendingBatchInvoice(invoice)?'<span class="comment-badge">Väntar på bunt · påverkar inte saldo ännu</span>':'';
+    const invoiceRow=`<tr class="invoice-row" data-invoice-id="${escapeHtml(invoice.id)}" data-customer-id="${escapeHtml(invoice.customerId||'')}" ${hidden}><td class="customer-cell"><div class="customer-identity invoice-customer-identity"><span><b>${escapeHtml(customer.customerNumber||'—')}</b><strong>${escapeHtml(customer.customerName||'Okänd kund')}</strong>${customer.orgNumber?`<small>Org.nr ${escapeHtml(customer.orgNumber)}</small>`:''}</span><span class="invoice-rest-badge"><small>Restbelopp</small><b>${ore(invoiceRest)}</b></span></div>${comments?`<span class="comment-badge">💬 ${comments}</span>`:''}${pendingBadge}${refundBadge}</td>${columns.map(c=>cell(c,base)).join('')}</tr>`;
     const reminderRows=(invoice.reminders||[]).map(reminder=>reminderRow(invoice,reminder,columns,visible)).join('');
     const txRows=(invoice.transactions||[]).map(tx=>{const row=R.receivableRow(invoice,mappedTransaction(tx));return `<tr class="transaction-row" data-customer-id="${escapeHtml(invoice.customerId||'')}" ${hidden}><td class="customer-cell"><span>↳ transaktion</span></td>${columns.map(c=>cell(c,row)).join('')}</tr>`}).join('');
     return invoiceRow+reminderRows+txRows;
@@ -222,7 +224,7 @@ function table(){
 function contextHtml(){
   if(!contextMenu)return '';
   const invoice=invoiceById(contextMenu.invoiceId),hasComments=Number(invoice?.commentCount||0)>0;
-  const canRemind=Number(invoice?.totalOre||0)>0&&Number(invoice?.remainingOre||0)>0;
+  const canRemind=!pendingBatchInvoice(invoice)&&Number(invoice?.totalOre||0)>0&&Number(invoice?.remainingOre||0)>0;
   const canRefund=invoice?.credit?.refundStatus==='pending'&&Number(invoice.credit.refundOutstandingOre||0)>0;
   return `<div class="context-menu" style="left:${contextMenu.x}px;top:${contextMenu.y}px">${hasComments?`<button data-action="show-comments" data-id="${escapeHtml(contextMenu.invoiceId)}">Visa kommentar</button>`:''}<button data-action="comment" data-id="${escapeHtml(contextMenu.invoiceId)}">Skriv kommentar</button>${canRemind?`<button data-action="reminder" data-id="${escapeHtml(contextMenu.invoiceId)}">Skapa betalningspåminnelse</button>`:''}${canRefund?`<button data-action="refund" data-id="${escapeHtml(contextMenu.invoiceId)}">Registrera återbetalning</button>`:''}<button data-action="close-context">Avbryt</button></div>`;
 }
@@ -356,11 +358,11 @@ async function loadReceivables(){
   })}
   const adjustmentByCredit=new Map((creditAdjustmentsData||[]).map(row=>[String(row.credit_invoice_id),row]));
   const refundByCredit=new Map((creditRefundsData||[]).map(row=>[String(row.credit_invoice_id),row]));
-  invoices=(invoicesData||[]).filter(row=>row.status!=='Väntar på bunt').map(row=>{const customer=customersById.get(String(row.customer_id))||{},adjustment=adjustmentByCredit.get(String(row.id))||null,refund=refundByCredit.get(String(row.id))||null,refundDueOre=Number(adjustment?.refund_due_ore||0),refundPaidOre=Number(refund?.amount_ore||0),refundOutstandingOre=Math.max(0,refundDueOre-refundPaidOre),credit=adjustment?{originalInvoiceId:adjustment.original_invoice_id,creditInvoiceId:adjustment.credit_invoice_id,reason:adjustment.reason||'',creditAmountOre:Number(adjustment.credit_amount_ore||0),offsetAmountOre:Number(adjustment.offset_amount_ore||0),refundDueOre,refund:refund?{amountOre:refundPaidOre,refundDate:refund.refund_date,refundAccount:refund.refund_account,bankReference:refund.bank_reference}:null,refundPaidOre,refundOutstandingOre,refundStatus:refundDueOre===0?'not-required':refundOutstandingOre===0?'refunded':'pending'}:null;return{
+  invoices=(invoicesData||[]).map(row=>{const customer=customersById.get(String(row.customer_id))||{},adjustment=adjustmentByCredit.get(String(row.id))||null,refund=refundByCredit.get(String(row.id))||null,refundDueOre=Number(adjustment?.refund_due_ore||0),refundPaidOre=Number(refund?.amount_ore||0),refundOutstandingOre=Math.max(0,refundDueOre-refundPaidOre),credit=adjustment?{originalInvoiceId:adjustment.original_invoice_id,creditInvoiceId:adjustment.credit_invoice_id,reason:adjustment.reason||'',creditAmountOre:Number(adjustment.credit_amount_ore||0),offsetAmountOre:Number(adjustment.offset_amount_ore||0),refundDueOre,refund:refund?{amountOre:refundPaidOre,refundDate:refund.refund_date,refundAccount:refund.refund_account,bankReference:refund.bank_reference}:null,refundPaidOre,refundOutstandingOre,refundStatus:refundDueOre===0?'not-required':refundOutstandingOre===0?'refunded':'pending'}:null;return{
     id:row.id,kind:'customer',customerId:row.customer_id,customerNumber:customer.customer_number||'',customerName:customer.name||'',customerOrgNumber:customer.org_number||'',invoiceNumber:row.invoice_number,ocr:row.ocr||'',invoiceDate:row.invoice_date,postingDate:row.posting_date,dueDate:row.due_date,totalOre:Number(row.total_ore||0),remainingOre:Number(row.remaining_ore||0),vatOre:Number(row.vat_ore||0),status:row.status,paymentMethod:row.payment_method,paymentAccount:row.payment_account,invoiceAccount:row.invoice_account,batchNumber:row.batch_number,journalNumber:row.journal_number,customerType:customer.customer_type||'business',reminderFeeAgreed:Boolean(customer.reminder_fee_agreed),commentCount:0,transactions:txByInvoice.get(String(row.id))||[],reminders:[],credit
   }});
   receivableCustomers=(customersData||[]).map(customer=>{const list=invoices.filter(i=>String(i.customerId)===String(customer.id));return{
-    customerId:customer.id,customerNumber:customer.customer_number,customerName:customer.name,orgNumber:customer.org_number||'',invoiceCount:list.length,openInvoiceCount:list.filter(i=>Number(i.remainingOre)!==0).length,remainingOre:list.reduce((sum,i)=>sum+Number(i.remainingOre||0),0)
+    customerId:customer.id,customerNumber:customer.customer_number,customerName:customer.name,orgNumber:customer.org_number||'',invoiceCount:list.length,openInvoiceCount:list.filter(i=>!pendingBatchInvoice(i)&&Number(i.remainingOre)!==0).length,remainingOre:list.filter(i=>!pendingBatchInvoice(i)).reduce((sum,i)=>sum+Number(i.remainingOre||0),0)
   }});
   portalView();
 }

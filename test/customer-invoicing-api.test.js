@@ -47,7 +47,7 @@ async function login(base,password,{username='faktura.test',atMs=Date.now()}={})
 function invoicePayload(requestId='invoice-request-0001'){return{
   requestId,customerNumber:'K-100',invoiceDate:'2026-09-18',postingDate:'2026-09-18',dueDate:'2026-10-18',paymentTermsDays:30,
   ourReference:'UAT',yourReference:'Test',notes:'Fiktiv testfaktura',
-  lines:[{description:'Testleverans',quantity:'1',unit:'st',unitPrice:'1000,00',vatTreatment:'se-standard-25',vatRate:'25',revenueAccount:'3051'}]
+  lines:[{description:'Testleverans',quantity:'1',unit:'st',unitPrice:'1000,00',vatRate:'25',revenueAccount:'3051'}]
 };}
 
 test('kundfakturor listas företagsisolerat och konfiguration visar om utställning är redo',async()=>withApi(async({base,password,co1,co2})=>{
@@ -170,6 +170,25 @@ test('utställning kräver CSRF och skapar atomiskt faktura, underlag, verifikat
   assert.equal(entry.lines.find(row=>row.account==='3051').creditOre,100000);
   assert.equal(entry.lines.find(row=>row.account==='2611').creditOre,25000);
   assert.ok(Db.auditForCompany(db,co1.id).some(event=>event.action==='CUSTOMER_INVOICE_ISSUED'&&event.entityId===data.invoice.id));
+}));
+
+test('direkt momssats utan typ av försäljning stöds men 0 procent avvisas',async()=>withApi(async({base,password})=>{
+  const signed=await login(base,password),headers={Cookie:signed.cookie,'Content-Type':'application/json','X-CSRF-Token':signed.body.csrfToken};
+  const valid=invoicePayload('invoice-request-direct-vat-0001');
+  delete valid.lines[0].vatTreatment;
+  valid.lines[0].vatRate='12';
+  valid.lines[0].revenueAccount='3042';
+  const created=await fetch(base+'/api/v1/customer-invoices',{method:'POST',headers,body:JSON.stringify(valid)});
+  assert.equal(created.status,201);
+
+  const invalid=invoicePayload('invoice-request-invalid-vat-0001');
+  delete invalid.lines[0].vatTreatment;
+  invalid.lines[0].vatRate='0';
+  invalid.lines[0].revenueAccount='3044';
+  const rejected=await fetch(base+'/api/v1/customer-invoices',{method:'POST',headers,body:JSON.stringify(invalid)});
+  const body=await rejected.json();
+  assert.equal(rejected.status,422);
+  assert.match(body.error,/25 %, 12 % eller 6 %/);
 }));
 
 test('samma idempotensnyckel kan skickas igen utan dubbel faktura eller dubbel verifikation',async()=>withApi(async({base,password,db,co1})=>{

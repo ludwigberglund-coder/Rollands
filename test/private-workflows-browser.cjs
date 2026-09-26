@@ -142,7 +142,7 @@ const Settings=require('../apps/api/company-invoice-settings.js');
     await page.locator('[data-row-field="quantity"]').fill('1');
     const unitPrice=page.locator('[data-row-field="unitPrice"]');
     await unitPrice.fill('100,00');
-    await page.locator('[data-row-field="vatTreatment"]').selectOption('se-standard-25');
+    await page.locator('[data-row-field="vatRate"]').selectOption('25');
     await page.locator('[data-row-field="revenueAccount"]').selectOption('3051');
     const invoiceCountBeforeEnter=Invoicing.listCustomerInvoices(f.db,f.a.id).length;
     await unitPrice.press('Enter');
