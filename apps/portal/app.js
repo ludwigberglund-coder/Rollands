@@ -342,22 +342,26 @@ async function loadReceivables(){
   if(!ctx.authenticated||!ctx.company){loginView();return}
   session={user:ctx.user,company:ctx.company};
   const companyFilter='company_id=eq.'+encodeURIComponent(ctx.company.id);
-  const [customersData,invoicesData,transactionsData,creditAdjustmentsData,creditRefundsData]=await Promise.all([
+  const [customersData,invoicesData,transactionsData,creditAdjustmentsData,creditRefundsData,commentRows,reminderRows]=await Promise.all([
     supabaseRows('customers',ctx.accessToken,companyFilter+'&archived_at=is.null'),
     supabaseRows('invoices',ctx.accessToken,companyFilter),
     supabaseRows('invoice_transactions',ctx.accessToken,companyFilter),
     supabaseRows('customer_invoice_credit_adjustments',ctx.accessToken,companyFilter),
-    supabaseRows('customer_credit_refunds',ctx.accessToken,companyFilter)
+    supabaseRows('customer_credit_refunds',ctx.accessToken,companyFilter),
+    supabaseRows('invoice_comments',ctx.accessToken,companyFilter+'&order=created_at.asc'),
+    supabaseRows('invoice_reminders',ctx.accessToken,companyFilter+'&order=reminder_date.asc')
   ]);
   const customersById=new Map((customersData||[]).map(row=>[String(row.id),row]));
   const txByInvoice=new Map();
   for(const tx of transactionsData||[]){const key=String(tx.invoice_id);if(!txByInvoice.has(key))txByInvoice.set(key,[]);txByInvoice.get(key).push({
     id:tx.id,transactionType:tx.transaction_type,paymentMethod:tx.payment_method,paymentDate:tx.payment_date,postingDate:tx.posting_date,batchNumber:tx.batch_number,journalNumber:tx.journal_number,amountOre:Number(tx.amount_ore||0),approved:tx.approved,account:tx.account,bankReference:tx.bank_reference
   })}
+  const commentsByInvoice=new Map();for(const row of commentRows||[]){const key=String(row.invoice_id);if(!commentsByInvoice.has(key))commentsByInvoice.set(key,[]);commentsByInvoice.get(key).push({id:row.id,companyId:row.company_id,invoiceId:row.invoice_id,text:row.comment_text,authorId:row.author_user_id,authorName:row.author_name,createdAt:row.created_at})}
+  const remindersByInvoice=new Map();for(const row of reminderRows||[]){const key=String(row.invoice_id);if(!remindersByInvoice.has(key))remindersByInvoice.set(key,[]);remindersByInvoice.get(key).push(row.record_json||{id:row.id,reminderNumber:row.reminder_number,reminderDate:row.reminder_date,kind:row.kind,createdAt:row.created_at})}
   const adjustmentByCredit=new Map((creditAdjustmentsData||[]).map(row=>[String(row.credit_invoice_id),row]));
   const refundByCredit=new Map((creditRefundsData||[]).map(row=>[String(row.credit_invoice_id),row]));
   invoices=(invoicesData||[]).filter(row=>row.status!=='Väntar på bunt').map(row=>{const customer=customersById.get(String(row.customer_id))||{},adjustment=adjustmentByCredit.get(String(row.id))||null,refund=refundByCredit.get(String(row.id))||null,refundDueOre=Number(adjustment?.refund_due_ore||0),refundPaidOre=Number(refund?.amount_ore||0),refundOutstandingOre=Math.max(0,refundDueOre-refundPaidOre),credit=adjustment?{originalInvoiceId:adjustment.original_invoice_id,creditInvoiceId:adjustment.credit_invoice_id,reason:adjustment.reason||'',creditAmountOre:Number(adjustment.credit_amount_ore||0),offsetAmountOre:Number(adjustment.offset_amount_ore||0),refundDueOre,refund:refund?{amountOre:refundPaidOre,refundDate:refund.refund_date,refundAccount:refund.refund_account,bankReference:refund.bank_reference}:null,refundPaidOre,refundOutstandingOre,refundStatus:refundDueOre===0?'not-required':refundOutstandingOre===0?'refunded':'pending'}:null;return{
-    id:row.id,kind:'customer',customerId:row.customer_id,customerNumber:customer.customer_number||'',customerName:customer.name||'',customerOrgNumber:customer.org_number||'',invoiceNumber:row.invoice_number,ocr:row.ocr||'',invoiceDate:row.invoice_date,postingDate:row.posting_date,dueDate:row.due_date,totalOre:Number(row.total_ore||0),remainingOre:Number(row.remaining_ore||0),vatOre:Number(row.vat_ore||0),status:row.status,paymentMethod:row.payment_method,paymentAccount:row.payment_account,invoiceAccount:row.invoice_account,batchNumber:row.batch_number,journalNumber:row.journal_number,customerType:customer.customer_type||'business',reminderFeeAgreed:Boolean(customer.reminder_fee_agreed),commentCount:0,transactions:txByInvoice.get(String(row.id))||[],reminders:[],credit
+    id:row.id,kind:'customer',customerId:row.customer_id,customerNumber:customer.customer_number||'',customerName:customer.name||'',customerOrgNumber:customer.org_number||'',invoiceNumber:row.invoice_number,ocr:row.ocr||'',invoiceDate:row.invoice_date,postingDate:row.posting_date,dueDate:row.due_date,totalOre:Number(row.total_ore||0),remainingOre:Number(row.remaining_ore||0),vatOre:Number(row.vat_ore||0),status:row.status,paymentMethod:row.payment_method,paymentAccount:row.payment_account,invoiceAccount:row.invoice_account,batchNumber:row.batch_number,journalNumber:row.journal_number,customerType:customer.customer_type||'business',reminderFeeAgreed:Boolean(customer.reminder_fee_agreed),commentCount:(commentsByInvoice.get(String(row.id))||[]).length,transactions:txByInvoice.get(String(row.id))||[],reminders:remindersByInvoice.get(String(row.id))||[],credit
   }});
   receivableCustomers=(customersData||[]).map(customer=>{const list=invoices.filter(i=>String(i.customerId)===String(customer.id));return{
     customerId:customer.id,customerNumber:customer.customer_number,customerName:customer.name,orgNumber:customer.org_number||'',invoiceCount:list.length,openInvoiceCount:list.filter(i=>Number(i.remainingOre)!==0).length,remainingOre:list.reduce((sum,i)=>sum+Number(i.remainingOre||0),0)
@@ -366,7 +370,13 @@ async function loadReceivables(){
 }
 async function openComments(invoiceId,{compose=false}={}){
   contextMenu=null;
-  const comments=mode==='demo'?demoComments(invoiceId):(await api('/invoices/'+encodeURIComponent(invoiceId)+'/comments')).comments;
+  let comments;
+  if(mode==='demo')comments=demoComments(invoiceId);
+  else if(mode==='supabase'){
+    const ctx=await supabaseContext();
+    const rows=await window.LTSupabase.from('invoice_comments',ctx.accessToken).select('*','company_id=eq.'+encodeURIComponent(ctx.company.id)+'&invoice_id=eq.'+encodeURIComponent(invoiceId)+'&order=created_at.asc');
+    comments=(rows||[]).map(row=>({id:row.id,companyId:row.company_id,invoiceId:row.invoice_id,text:row.comment_text,authorId:row.author_user_id,authorName:row.author_name,createdAt:row.created_at}));
+  }else comments=(await api('/invoices/'+encodeURIComponent(invoiceId)+'/comments')).comments;
   modal={type:'comments',invoiceId,comments,draftText:'',compose};
   renderOverlays();
   if(compose)requestAnimationFrame(()=>document.getElementById('invoice-comment-draft')?.focus());
@@ -378,7 +388,11 @@ async function previewReminder(form){
   const requestOptions={sentDate:formValues.sentDate,includeInterest:formValues.includeInterest,includeReminderFee:formValues.includeReminderFee,includeBusinessLatePaymentCompensation:formValues.includeBusinessLatePaymentCompensation};
   const demoOptions={...requestOptions,note:formValues.note,customerType:invoice.customerType,reminderFeeAgreed:Boolean(invoice.reminderFeeAgreed)};
   try{
-    const preview=mode==='demo'?R.reminderPreview({...invoice,reminders:[...(invoice.reminders||[]),...demoReminders(invoice.id)]},demoOptions,legalRates):(await api('/invoices/'+encodeURIComponent(invoice.id)+'/reminders/preview',{method:'POST',body:requestOptions})).preview;
+    const preview=mode==='demo'
+      ?R.reminderPreview({...invoice,reminders:[...(invoice.reminders||[]),...demoReminders(invoice.id)]},demoOptions,legalRates)
+      :mode==='supabase'
+        ?R.reminderPreview(invoice,demoOptions,legalRates)
+        :(await api('/invoices/'+encodeURIComponent(invoice.id)+'/reminders/preview',{method:'POST',body:requestOptions})).preview;
     modal={...modal,preview,error:'',sentDate:formValues.sentDate,formValues};
   }catch(error){
     modal={...modal,preview:null,error:error.message,sentDate:formValues.sentDate,formValues};
@@ -424,6 +438,11 @@ document.addEventListener('submit',async event=>{
         const actor={id:'demo-user',name:'Demoanvändare'};
         comment=R.createInvoiceComment({invoiceId:modal.invoiceId,companyId:'demo-company',actor,text});
         const list=[...demoComments(modal.invoiceId),comment];setDemoComments(modal.invoiceId,list);
+      }else if(mode==='supabase'){
+        const ctx=await supabaseContext();
+        const saved=(await window.LTSupabase.rpc('create_invoice_comment',{p_company_id:ctx.company.id,p_invoice_id:modal.invoiceId,p_text:text},ctx.accessToken))?.[0];
+        if(!saved)throw new Error('Kommentaren kunde inte sparas i Supabase.');
+        comment={id:saved.id,companyId:ctx.company.id,invoiceId:saved.invoice_id,text:saved.comment_text,authorId:saved.author_user_id,authorName:saved.author_name,createdAt:saved.created_at};
       }else comment=(await api('/invoices/'+encodeURIComponent(modal.invoiceId)+'/comments',{method:'POST',body:{text}})).comment;
       const invoice=invoiceById(modal.invoiceId);
       const list=[...(modal.comments||[]),comment];
@@ -441,6 +460,12 @@ document.addEventListener('submit',async event=>{
       if(mode==='demo'){
         const record={...R.createReminderRecord({invoice:{...invoice,reminders:[...(invoice.reminders||[]),...demoReminders(invoice.id)]},companyId:'demo-company',actor:{id:'demo-user',name:'Demoanvändare'},options:{...body,reminderFeeAgreed:Boolean(invoice.reminderFeeAgreed),customerType:invoice.customerType},config:legalRates}),reminderNumber:'P-'+invoice.invoiceNumber+'-DEMO01',pdfSha256:''};
         setDemoReminders(invoice.id,[...demoReminders(invoice.id),record]);modal=null;renderReceivableResults();renderOverlays();
+      }else if(mode==='supabase'){
+        const ctx=await supabaseContext();
+        const record=R.createReminderRecord({invoice,companyId:ctx.company.id,actor:{id:ctx.authUser.id,name:ctx.user.displayName},options:{...body,reminderFeeAgreed:Boolean(invoice.reminderFeeAgreed),customerType:invoice.customerType},config:legalRates});
+        const saved=(await window.LTSupabase.rpc('create_invoice_reminder',{p_company_id:ctx.company.id,p_invoice_id:invoice.id,p_record:record},ctx.accessToken))?.[0];
+        if(!saved)throw new Error('Påminnelsen kunde inte sparas i Supabase.');
+        modal=null;await loadReceivables();
       }else{await api('/invoices/'+encodeURIComponent(invoice.id)+'/reminders',{method:'POST',body});modal=null;await loadReceivables()}
     }catch(error){modal={...modal,error:error.message};renderOverlays()}
     return;

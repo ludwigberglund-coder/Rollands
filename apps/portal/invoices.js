@@ -6,7 +6,7 @@ const Pdf=globalThis.RollandsInvoicePdf;
 const isDemo=new URLSearchParams(location.search).get('demo')==='1';
 const isSupabase=location.hostname==='ludwigberglund-coder.github.io'&&!isDemo;
 let company={},view='list',draft=null,preview=null,previewRecord=null,previewCredit=null,previewCreditSummary=null,busy=false,dirty=false,search='',invoiceSearchOpen=false,invoiceSearchActiveIndex=-1,creditDialog=null;
-let privateCustomers=[],privateInvoices=[],privateDraftRecord=null,csrfToken=sessionStorage.getItem('rollands-csrf')||'',issueReady=false,issueBlocker='',issueRequestId='',supabaseCtx=null;
+let privateCustomers=[],privateInvoices=[],privateRevenueAccounts=[],privateDraftRecord=null,csrfToken=sessionStorage.getItem('rollands-csrf')||'',issueReady=false,issueBlocker='',issueRequestId='',supabaseCtx=null;
 const LEGACY_PRIVATE_DRAFT_KEY='rollands-private-invoice-draft-v1';
 const copy=value=>JSON.parse(JSON.stringify(value));
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,19 +23,21 @@ function customers(){if(!isDemo)return privateCustomers;const state=Demo.state()
 function customerForNumber(number){return customers().find(c=>c.customerNumber===number)||null;}
 function buyerFromCustomer(number){const c=customerForNumber(number);return c?{name:c.name||'',address:typeof c.address==='string'?c.address:(c.address?.full||''),orgNumber:c.orgNumber||'',email:c.email||''}:{name:'',address:'',orgNumber:'',email:''};}
 function syncDraftBuyer(){if(draft)draft.buyer=buyerFromCustomer(draft.customerNumber);}
-function accounts(){return Invoice.revenueAccounts(isDemo?(Demo.state().invoiceRevenueAccounts||[]):[]);}
+function accounts(){return Invoice.revenueAccounts(isDemo?(Demo.state().invoiceRevenueAccounts||[]):privateRevenueAccounts);}
 async function api(path,options={}){const headers={'Accept':'application/json',...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})};if(options.method&&options.method!=='GET'){if(!csrfToken)throw new Error('Säkerhetskontrollen saknas. Logga in igen.');headers['X-CSRF-Token']=csrfToken;}const response=await fetch(`/api/v1${path}`,{credentials:'same-origin',...options,headers,body:options.body?JSON.stringify(options.body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(data.error||'Begäran misslyckades.');error.code=data.code;error.status=response.status;throw error;}return data;}
 async function supabaseContext(){supabaseCtx=supabaseCtx?.authenticated?supabaseCtx:await window.LTSupabaseUat.context();if(!supabaseCtx?.authenticated||!supabaseCtx.company){location.href='./index.html';throw new Error('Ingen aktiv Supabase-session.');}return supabaseCtx;}
 function mapSupabaseInvoice(row,customersById){const customer=customersById.get(String(row.customer_id))||{};return{id:row.id,kind:'customer',customerId:row.customer_id,customerNumber:customer.customerNumber||customer.customer_number||'',customerName:customer.name||'',invoiceNumber:row.invoice_number,ocr:row.ocr||row.invoice_number,invoiceDate:row.invoice_date,postingDate:row.posting_date,dueDate:row.due_date,totalOre:Number(row.total_ore||0),remainingOre:Number(row.remaining_ore||0),vatOre:Number(row.vat_ore||0),status:row.status,paymentMethod:row.payment_method,paymentAccount:row.payment_account,invoiceAccount:row.invoice_account||'1510',batchNumber:row.batch_number,journalNumber:row.journal_number,pdfSha256:row.pdf_sha256||'',createdAt:row.created_at,updatedAt:row.updated_at};}
 async function refreshSupabaseCollections(){
   const ctx=await supabaseContext(),filter='company_id=eq.'+encodeURIComponent(ctx.company.id);
-  const [customerRows,invoiceRows,settingRows,draftRows]=await Promise.all([
+  const [customerRows,invoiceRows,settingRows,draftRows,revenueRows]=await Promise.all([
     window.LTSupabase.from('customers',ctx.accessToken).select('*',filter+'&archived_at=is.null'),
     window.LTSupabase.from('invoices',ctx.accessToken).select('*',filter),
     window.LTSupabase.from('company_invoice_settings',ctx.accessToken).select('*',filter),
-    window.LTSupabase.from('customer_invoice_drafts',ctx.accessToken).select('*',filter+'&user_id=eq.'+encodeURIComponent(ctx.authUser.id))
+    window.LTSupabase.from('customer_invoice_drafts',ctx.accessToken).select('*',filter+'&user_id=eq.'+encodeURIComponent(ctx.authUser.id)),
+    window.LTSupabase.from('company_revenue_accounts',ctx.accessToken).select('*',filter+'&order=account_number.asc')
   ]);
   privateCustomers=(customerRows||[]).map(r=>({id:r.id,customerNumber:r.customer_number,name:r.name,orgNumber:r.org_number||'',email:r.email||'',address:r.address_json||{},paymentTermsDays:30}));
+  privateRevenueAccounts=(revenueRows||[]).map(r=>({number:r.account_number,name:r.account_name,vatRates:(r.vat_rates||[]).map(Number)}));
   const customersById=new Map(privateCustomers.map(r=>[String(r.id),r]));
   privateInvoices=(invoiceRows||[]).map(r=>mapSupabaseInvoice(r,customersById));
   const settings=settingRows?.[0]||{};

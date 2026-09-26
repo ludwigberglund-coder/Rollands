@@ -81,6 +81,7 @@
   async function signOut(scope='global'){
     const t=token();
     if(t)await api().signOut(t,scope).catch(()=>{});
+    window.LTSupabaseRealtime?.stop?.();
     write(null);localStorage.removeItem(COMPANY_KEY);
   }
   async function context(){
@@ -112,7 +113,7 @@
     if(companyId)localStorage.setItem(COMPANY_KEY,companyId);
     const company=visible.find(c=>String(c.id)===String(companyId))||visible[0]||null;
     const membership=(memberships||[]).find(m=>String(m.company_id)===String(company?.id))||null;
-    return {
+    const result={
       authenticated:true,
       accessToken:t,
       authUser,
@@ -122,6 +123,8 @@
       membership,
       companies:visible.map(c=>({id:c.id,name:c.display_name||c.legal_name||'Företaget'}))
     };
+    window.LTSupabaseRealtime?.autoSync?.(result);
+    return result;
   }
   function setCompany(id){localStorage.setItem(COMPANY_KEY,String(id||''))}
   window.LTSupabaseUat={read,token,storeSession,signIn,signOut,context,setCompany};
